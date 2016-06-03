@@ -22,7 +22,7 @@ The source needs to be compiled (tested on Linux and MacOS):
 In order to work, the pcap-file must be preprocessed by Wireshark and should only contain OpenFlow Messages.  
 It needs to be saved by Wireshark in the TCPDUMP format. 
 
-The follwoing display filter can be used in Wireshark to do the necessary filtering:
+The follwoing display filter can be used in Wireshark to do the necessary filtering:  
 `openflow_v4.type == 10 or openflow_v4.type == 13`
 
 
@@ -31,10 +31,10 @@ The program can be run like this:
 `./sniff test.pcap`
 
 It prints out some information for every OF-Message it encounters on the screen
-and writes message-statistics to the file`of_message_stats.csv`.
+and writes message-statistics to the file `of_message_stats.csv`.
  
 ## Graphing the output
-The program produces an output file `of_message_stats.csv`.   
+The program produces one output file `of_message_stats.csv`.   
 **Attention: This file gets overwritten every time the program runs!**
   
 It contains 3 columns of data: 
@@ -47,7 +47,7 @@ The last line is a summary of all the Packet\_IN and Packet\_OUT messages seen i
 
 ### Plotting with GNUPLOT
 
-The CSV-Data can be easily plotted with Gnuplot.   
+The CSV-data can be easily plotted with Gnuplot.   
 
 This can even be done online at <http://gnuplot.respawned.com>.  
 Paste your data from the CSV-file into the Data-Window (exclude the summary line):

@@ -4,10 +4,12 @@
 #include <pcap.h>
 #include "sniff.h"
 
-#define LINE_LEN 16
+#define LINE_LENGTH 16
 #define SIZE_ETHERNET 14
 #define TRUE 1
 #define FALSE 0
+
+#define PACKET_INTERVAL 0.01
 
 
 int main(int argc, char **argv) 
@@ -18,16 +20,17 @@ int main(int argc, char **argv)
    struct pcap_pkthdr *pcap_header;
    const u_char *pkt_data;
 
-   char *ch_ptr;
-   char char_buff[20]; /*time format conversion*/
+   char *ch_ptr;                          /* for time format conversion*/
+   char char_buff[20];                    /* for time format conversion*/
    
-   u_int i=0;
+   int i=0;
    int res;
    int packet_nr = 1;
    int ofMessageCounter_10 = 0;
    int ofMessageCounter_13 = 0;
-   double firstPacketTime, thisPacketTime;
-   double lastPacketTime = -1.0;
+   int ofMessageCounter_10_total = 0;
+   int ofMessageCounter_13_total = 0;
+   double firstPacketTime, thisPacketTime, lastPacketTime;
    char morePacketsFlag = 0;
    
    FILE *out_fp; /* File pointer for CSV file */
@@ -35,10 +38,10 @@ int main(int argc, char **argv)
    
    
 	const struct sniff_ethernet *ethernet; /* The ethernet header */
-	const struct sniff_ip *ip; /* The IP header */
-	const struct sniff_tcp *tcp; /* The TCP header */
+	const struct sniff_ip *ip;             /* The IP header */
+	const struct sniff_tcp *tcp;           /* The TCP header */
+	const struct sniff_of *of;             /* The OpenFlow header*/
 	u_char *payload; /* Packet payload */
-	const struct sniff_of *of; /* The OpenFlow header*/
    int offset = 0; /*Difference between Openflow Packet Size and encap. IP Packet*/
    
    
@@ -75,6 +78,7 @@ int main(int argc, char **argv)
       printf("%i: %ld:%i (%i)\n", packet_nr, pcap_header->ts.tv_sec, pcap_header->ts.tv_usec, pcap_header->len);          
       if (packet_nr == 1) {
          firstPacketTime = pcap_header->ts.tv_sec + (pcap_header->ts.tv_usec * 0.000001);
+         lastPacketTime = firstPacketTime;
       }
       
       ethernet = (struct sniff_ethernet*)(pkt_data);
@@ -99,7 +103,7 @@ int main(int argc, char **argv)
       /*        for (i=1; (i < pcap_header->caplen + 1 ) ; i++)
        {
        printf("%.2x ", pkt_data[i-1]);
-       if ( (i % LINE_LEN) == 0) printf("\n");
+       if ( (i % LINE_LENGTH) == 0) printf("\n");
        }
        */       
       printf("TCP-SourcePort: %i\n",ntohs(tcp->th_sport));
@@ -108,14 +112,51 @@ int main(int argc, char **argv)
       printf("OF-Type: %i\n",of->of_type);
       printf("OF-Length: %i\n",ntohs(of->of_length));
       
+      
+      /* write OF statistics to file
+       * Format: Time in Millisecond since first Packet; Counter Packet_IN messages; Counter Packet_OUT messages 
+       */
+      
+      thisPacketTime = pcap_header->ts.tv_sec + (pcap_header->ts.tv_usec * 0.000001);
+      
+      if ((thisPacketTime - lastPacketTime) > PACKET_INTERVAL) 
+      {
+         sprintf(char_buff, "%.6f",lastPacketTime - firstPacketTime);
+
+         /* uncomment following code to substitute  decimal point for decimal comma 
+          * in order to be useable in German EXCEL
+          */
+/*          
+         ch_ptr= strstr(char_buff, ".");
+         if(ch_ptr != NULL) 
+         {
+            *ch_ptr = ',';
+         }
+*/         
+         fprintf(out_fp,"%s\t%i\t%i\n", char_buff, ofMessageCounter_10, ofMessageCounter_13);
+         
+         ofMessageCounter_10 = 0;
+         ofMessageCounter_13 = 0;
+         lastPacketTime = thisPacketTime;
+         morePacketsFlag = FALSE;
+      }
+      else 
+      {
+         morePacketsFlag = TRUE;
+      }
+      
+      
+      
       /* Count the OF-Messages per Packet */
       if (of->of_type == 10) 
       {   
          ofMessageCounter_10++;
+         ofMessageCounter_10_total++;
       }   
       else 
       {
          ofMessageCounter_13++;
+         ofMessageCounter_13_total++;
       }
          
       offset = offset + (ntohs(of->of_length) + SIZE_ETHERNET + size_ip + size_tcp) - pcap_header->caplen; 
@@ -129,14 +170,18 @@ int main(int argc, char **argv)
 			printf("OF-Type: %i\n",of->of_type);
 			printf("OF-Length: %i\n",ntohs(of->of_length));
          
+         
          /* Count the OF-Messages per Packet */
+
 			if (of->of_type == 10) 
          {   
             ofMessageCounter_10++;
+            ofMessageCounter_10_total++;
          }   
          else 
          {
             ofMessageCounter_13++;
+            ofMessageCounter_13_total++;
          }
 			
 			offset = offset + (ntohs(of->of_length) + SIZE_ETHERNET + size_ip + size_tcp) - pcap_header->caplen;
@@ -145,50 +190,33 @@ int main(int argc, char **argv)
 		
       printf("Offset: %i\n",offset);
       
-      /* write OF statistics to file
-       * Format: Time in Millisecond since first Packet; Counter Packet_IN messages; Counter Packet_OUT messages 
-       */
-      
-      thisPacketTime = pcap_header->ts.tv_sec + (pcap_header->ts.tv_usec * 0.000001);
-      
-      if ((thisPacketTime - lastPacketTime) > 0.01) 
-      {
-         sprintf(char_buff, "%.6f",thisPacketTime - firstPacketTime);
-         ch_ptr= strstr(char_buff, ".");
-         if(ch_ptr != NULL) 
-         {
-            /* decimal komma instead of decimal point */
-            //*ch_ptr = ',';
-         }
-         //fprintf(out_fp,"%s;%i;%i\n", char_buff, ofMessageCounter_10, ofMessageCounter_13);
-         fprintf(out_fp,"%s\t%i\t%i\n", char_buff, ofMessageCounter_10, ofMessageCounter_13);
-         
-         ofMessageCounter_10 = 0;
-         ofMessageCounter_13 = 0;
-         lastPacketTime = thisPacketTime;
-         morePacketsFlag = FALSE;
-      }
-      else 
-      {
-         morePacketsFlag = TRUE;
-      }
- 
+     
       printf("\n\n"); 
       packet_nr++;
    }
+   
+   
+   /* Finally */
    if (morePacketsFlag == TRUE) 
    {
-      sprintf(char_buff, "%.6f",thisPacketTime - firstPacketTime);
-      ch_ptr= strstr(char_buff, ".");
-      if(ch_ptr != NULL) 
-      {
-         /* decimal komma instead of decimal point */
-         //*ch_ptr = ',';
-      }
-      //fprintf(out_fp,"%s;%i;%i\n", char_buff, ofMessageCounter_10, ofMessageCounter_13);
+      sprintf(char_buff, "%.6f",lastPacketTime - firstPacketTime);
+      
+      /* uncomment following code to substitute  decimal point for decimal comma 
+       * in order to be useable in German EXCEL
+       */
+      /*          
+       ch_ptr= strstr(char_buff, ".");
+       if(ch_ptr != NULL) 
+       {
+       *ch_ptr = ',';
+       }
+       */             
+    
       fprintf(out_fp,"%s\t%i\t%i\n", char_buff, ofMessageCounter_10, ofMessageCounter_13);
    }
-   
+
+     fprintf(out_fp,"\n\n\t\t%s\t%s\n", "IN", "OUT");
+     fprintf(out_fp,"\t\t%i\t%i\n", ofMessageCounter_10_total, ofMessageCounter_13_total);
    fclose(out_fp);
    
    if(res == -1)
